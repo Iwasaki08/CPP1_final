@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <style>
+      body { font-family: sans-serif; background-color: #f0f2f5; margin: 20px; }
+      .container { max-width: 1000px; margin: auto; background-color: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+      h1, h2 { color: #1c1e21; }
+      table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+      th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; vertical-align: middle; }
+      th { background-color: #f5f6f7; }
+      th.sortable { cursor: pointer; }
+      th.sortable:hover { background-color: #e9ebee; }
+      .form-card { padding: 20px; background-color: #f9f9f9; border-radius: 8px; margin-bottom: 20px; }
+      input { width: calc(100% - 22px); padding: 10px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 6px; }
+      .add-form-grid { display: grid; grid-template-columns: 1fr 1fr; grid-gap: 10px; }
+      button { padding: 10px 15px; border: none; border-radius: 6px; cursor: pointer; color: white; font-weight: bold; margin-left: 5px; }
+      .btn-add { background-color: #1877f2; width: 100%; grid-column: span 2; margin-left: 0; }
+      .btn-update { background-color: #42b72a; }
+      .btn-delete { background-color: #f02849; }
+      .editable-input { width: 90%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>📦 在庫管理アプリ「Kura」</h1>
+
+      <div class="form-card">
+        <h2>✅ 在庫を追加する</h2>
+        <form id="add-form" class="add-form-grid">
+          <input type="text" id="add-product-name" placeholder="商品名" required>
+          <input type="number" id="add-quantity" placeholder="数量" min="0" required>
+          <input type="text" id="add-category" placeholder="カテゴリ">
+          <input type="text" id="add-notes" placeholder="メモ">
+          <button type="submit" class="btn-add">追加</button>
+        </form>
+      </div>
+
+      <h2>現在の在庫一覧</h2>
+      <input type="text" id="search-box" placeholder="商品名やカテゴリで検索..." onkeyup="filterTable()">
+      <table id="inventory-table">
+        <thead>
+          <tr>
+            <th class="sortable" onclick="sortTable(1)">商品名 ▼</th>
+            <th class="sortable" onclick="sortTable(2)">数量 ▼</th>
+            <th>カテゴリ</th>
+            <th>メモ</th>
+            <th class="sortable" onclick="sortTable(5)">最終更新日時 ▼</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <script>
+      document.addEventListener("DOMContentLoaded", () => loadInventory());
+      let currentInventoryData = []; // 在庫データを保持する変数
+
+      function loadInventory() {
+        google.script.run.withSuccessHandler(data => {
+          currentInventoryData = data;
+          renderTable(currentInventoryData);
+        }).getInventory();
+      }
+
+      function renderTable(data) {
+        const tbody = document.querySelector("#inventory-table tbody");
+        tbody.innerHTML = "";
+        data.forEach(item => {
+          const row = tbody.insertRow();
+          row.innerHTML = `
+            <td>${item.product_name}</td>
+            <td><input type="number" class="editable-input quantity" value="${item.quantity || 0}" min="0"></td>
+            <td><input type="text" class="editable-input category" value="${item.category || ''}"></td>
+            <td><input type="text" class="editable-input notes" value="${item.notes || ''}"></td>
+            <td>${item.last_updated}</td>
+            <td>
+              <button class="btn-update" onclick="handleUpdate(this, ${item.id})">更新</button>
+              <button class="btn-delete" onclick="handleDelete(${item.id}, '${item.product_name}')">削除</button>
+            </td>
+          `;
+        });
+      }
+
+      document.getElementById("add-form").addEventListener("submit", e => {
+        e.preventDefault();
+        const newItem = {
+          product_name: document.getElementById("add-product-name").value,
+          quantity: document.getElementById("add-quantity").value,
+          category: document.getElementById("add-category").value,
+          notes: document.getElementById("add-notes").value,
+        };
+        google.script.run.withSuccessHandler(onSuccess).addItem(newItem);
+        e.target.reset();
+      });
+
+      function handleUpdate(buttonElement, id) {
+        const row = buttonElement.closest('tr');
+        const updatedItem = {
+          id: id,
+          quantity: row.querySelector('.quantity').value,
+          category: row.querySelector('.category').value,
+          notes: row.querySelector('.notes').value
+        };
+        google.script.run.withSuccessHandler(onSuccess).updateItem(updatedItem);
+      }
+
+      function handleDelete(id, name) {
+        if (confirm(`「${name}」(ID: ${id}) を本当に削除しますか？`)) {
+          google.script.run.withSuccessHandler(onSuccess).deleteItem(id);
+        }
+      }
+
+      function onSuccess(message) {
+        alert(message);
+        loadInventory();
+      }
+      
+      function filterTable() {
+        const filter = document.getElementById("search-box").value.toUpperCase();
+        const table = document.getElementById("inventory-table");
+        const tr = table.getElementsByTagName("tr");
+        for (let i = 1; i < tr.length; i++) {
+          const productName = tr[i].getElementsByTagName("td")[0];
+          const category = tr[i].getElementsByTagName("td")[2];
+          if (productName || category) {
+            const productNameText = productName.textContent || productName.innerText;
+            const categoryText = category.querySelector('input').value;
+            if (productNameText.toUpperCase().indexOf(filter) > -1 || categoryText.toUpperCase().indexOf(filter) > -1) {
+              tr[i].style.display = "";
+            } else {
+              tr[i].style.display = "none";
+            }
+          }
+        }
+      }
+
+      function sortTable(columnIndex) {
+        let sortDirection = 'asc';
+        const header = document.querySelector(`#inventory-table th:nth-child(${columnIndex})`);
+        if (header.dataset.sortDir === 'asc') {
+          sortDirection = 'desc';
+        }
+        header.dataset.sortDir = sortDirection;
+        
+        currentInventoryData.sort((a, b) => {
+          const key = Object.keys(a)[columnIndex - 1];
+          let valA = a[key];
+          let valB = b[key];
+
+          // 数値の場合は数値として比較
+          if (!isNaN(valA) && !isNaN(valB)) {
+             return sortDirection === 'asc' ? valA - valB : valB - valA;
+          }
+          // 文字列として比較
+          valA = String(valA).toLowerCase();
+          valB = String(valB).toLowerCase();
+          
+          if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+          if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+          return 0;
+        });
+        renderTable(currentInventoryData);
+      }
+    </script>
+  </body>
+</html>
